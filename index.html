@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CycleNavi（仮）— 自転車ツーリングの計画と記録</title>
+<meta name="description" content="ランドナー・自転車キャンプ向けのルート作成、沿道スポット検索、GPX入出力、写真からの経路作成ができる会員制Webアプリ">
+<meta name="theme-color" content="#1D2A33">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚲</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: { ink:'#1D2A33', pine:'#2F5D50', paper:'#EFF1E8', ochre:'#C98A1E', rust:'#B8432F', route:'#7B2CBF' },
+      fontFamily: { sans:['"Zen Kaku Gothic New"','system-ui','sans-serif'], num:['"Barlow Condensed"','sans-serif'] }
+    } }
+  };
+</script>
+<style>
+  :root{
+    --ink:#1D2A33; --ink-2:#2B3B46; --pine:#2F5D50; --pine-l:#8BC0AC; --paper:#EFF1E8; --paper-2:#E2E6D8;
+    --line:#C8CEBE; --ochre:#C98A1E; --ochre-l:#E6AE45; --rust:#B8432F; --route:#7B2CBF; --text:#1D2A33; --muted:#566562;
+    --panel-w:388px; --header-h:56px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:"Zen Kaku Gothic New",system-ui,sans-serif;font-size:16px;line-height:1.6;color:var(--text);background:var(--paper);overflow:hidden;-webkit-text-size-adjust:100%}
+  button{cursor:pointer}
+  :focus-visible{outline:3px solid var(--ochre);outline-offset:2px}
+
+  /* header */
+  .topbar{position:fixed;top:0;left:0;right:0;height:calc(var(--header-h) + env(safe-area-inset-top,0px));padding:env(safe-area-inset-top,0px) 12px 0 16px;background:var(--ink);color:var(--paper);display:flex;align-items:center;gap:12px;z-index:1200}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand-name{font-weight:900;font-size:19px;letter-spacing:.02em;white-space:nowrap}
+  .brand-sub{font-size:12px;color:rgba(239,241,232,.62);white-space:nowrap}
+  .user-btn{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 6px;border-radius:999px;color:var(--paper);border:1px solid rgba(239,241,232,.22);font-size:14px;font-weight:700;max-width:200px}
+  .user-btn .av{width:28px;height:28px;border-radius:50%;background:var(--ochre);color:var(--ink);display:grid;place-items:center;font-weight:900;font-size:14px;flex:none}
+  .user-btn .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .user-menu{position:absolute;right:12px;top:calc(var(--header-h) + env(safe-area-inset-top,0px) - 4px);background:#fff;color:var(--ink);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.22);min-width:220px;padding:6px;z-index:1300}
+  .user-menu[hidden]{display:none}
+  .user-menu .who{padding:10px 12px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--paper-2);margin-bottom:4px;word-break:break-all}
+  .user-menu button{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:8px;font-size:15px}
+  .user-menu button:hover{background:var(--paper)}
+
+  /* layout */
+  .layout{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top,0px));left:0;right:0;bottom:0;display:flex}
+  .panel{width:var(--panel-w);flex:none;background:var(--paper);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:1000;min-height:0}
+  .map-wrap{position:relative;flex:1;min-width:0}
+  #map{position:absolute;inset:0;background:#dde3d6}
+  .tabs{display:flex;overflow-x:auto;gap:2px;padding:0 8px;border-bottom:1px solid var(--line);scrollbar-width:none;flex:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:15px 10px 12px;font-weight:700;font-size:14px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap;background:none}
+  .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ochre)}
+  .panel-body{flex:1;overflow-y:auto;padding:18px 18px 40px;min-height:0;-webkit-overflow-scrolling:touch}
+  .pane{display:none}
+  .pane.active{display:block}
+  .sheet-handle{display:none}
+
+  /* typography */
+  .h{font-weight:900;font-size:17px;margin:22px 0 8px;line-height:1.4}
+  .pane > .h:first-child,.pane > .first{margin-top:0}
+  .note{font-size:13.5px;color:var(--muted);line-height:1.75;margin:0 0 10px}
+  .empty{font-size:14px;color:var(--muted);padding:16px 0;list-style:none}
+
+  /* forms */
+  .field{display:block;margin-bottom:14px}
+  .field > span{display:block;font-size:13.5px;font-weight:700;margin-bottom:6px}
+  .input,.select{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-size:16px;color:var(--text);min-height:46px}
+  textarea.input{min-height:92px;resize:vertical;line-height:1.6}
+  .input:focus,.select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 3px rgba(47,93,80,.18)}
+  .pw-wrap{position:relative}
+  .pw-wrap .input{padding-right:50px}
+  .pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:42px;height:42px;display:grid;place-items:center;border-radius:8px;color:var(--muted);background:none}
+  .pw-eye:hover{color:var(--ink);background:var(--paper)}
+  .pw-eye svg{width:22px;height:22px}
+  .pw-eye .ic-off{display:none}
+  .pw-eye[aria-pressed="true"] .ic-on{display:none}
+  .pw-eye[aria-pressed="true"] .ic-off{display:block}
+  .check{display:flex;align-items:center;gap:10px;font-size:14.5px;margin:6px 0 12px;cursor:pointer}
+  .check input{width:20px;height:20px;accent-color:var(--pine)}
+  .search-row{display:flex;gap:8px}
+  .search-row .input{flex:1;min-width:0}
+
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;border-radius:10px;font-weight:700;font-size:15px;border:1.5px solid transparent;min-height:46px;background:none;color:var(--ink);line-height:1.3}
+  .btn-primary{background:var(--pine);color:#fff}
+  .btn-primary:hover{background:#264c41}
+  .btn-ghost{border-color:var(--ink)}
+  .btn-ghost:hover{background:var(--paper-2)}
+  .btn-quiet{background:var(--paper-2)}
+  .btn-quiet:hover{background:#d6dbcb}
+  .btn-danger{border-color:var(--rust);color:var(--rust)}
+  .btn-danger:hover{background:#f5e3df}
+  .btn-block{width:100%}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-mini{font-size:13px;font-weight:700;padding:6px 10px;border-radius:8px;background:var(--paper-2);color:var(--ink);min-height:34px;border:0}
+  .btn-mini:hover{background:#d6dbcb}
+  .btn-mini.danger{color:var(--rust);background:transparent}
+  .btn-mini.primary{background:var(--pine);color:#fff}
+  .link-btn{background:none;border:0;color:var(--pine);font-weight:700;text-decoration:underline;text-underline-offset:3px;font-size:14px;padding:4px 0}
+
+  /* condition segmented control */
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .seg label{position:relative;display:block}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg .opt{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px 4px 9px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:12.5px;font-weight:700;text-align:center;line-height:1.35;cursor:pointer;min-height:84px;color:var(--muted)}
+  .seg .opt svg{width:52px;height:22px}
+  .seg input:checked + .opt{border-color:var(--pine);background:#E1EBE5;color:var(--pine)}
+  .seg input:focus-visible + .opt{outline:3px solid var(--ochre);outline-offset:2px}
+
+  /* current route label */
+  .current{background:#fff;border:1.5px solid var(--line);border-left:5px solid var(--route);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+  .current[hidden]{display:none}
+  .current b{display:block;font-size:15px}
+
+  /* waypoints */
+  .wp-list{list-style:none;margin:6px 0 12px;padding:0}
+  .wp-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .wp-badge{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:700 15px "Barlow Condensed",sans-serif;background:var(--ink);color:#fff;flex:none}
+  .wp-badge.s{background:var(--pine)} .wp-badge.g{background:var(--rust)}
+  .wp-name{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .icon-btn{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:var(--muted);background:none;flex:none}
+  .icon-btn:hover{background:var(--paper-2);color:var(--ink)}
+  .icon-btn:disabled{opacity:.3}
+  .icon-btn svg{width:18px;height:18px}
+  .results{list-style:none;margin:6px 0 0;padding:0}
+  .results li button{display:block;width:100%;text-align:left;padding:9px 10px;border-radius:8px;font-size:14px;background:#fff;margin-bottom:4px;border:1px solid var(--paper-2)}
+  .results li button:hover{border-color:var(--pine)}
+  .results small{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .advice{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:14px;font-size:14.5px;line-height:1.85;white-space:pre-wrap;margin-top:12px}
+  .advice[hidden]{display:none}
+
+  /* spot chips / list */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1.5px solid var(--line);background:#fff;font-size:13.5px;font-weight:700;color:var(--muted);min-height:38px}
+  .chip[aria-pressed="true"]{border-color:var(--c,var(--pine));color:var(--ink);background:color-mix(in srgb, var(--c,var(--pine)) 12%, #fff)}
+  .spot-list{list-style:none;margin:10px 0 0;padding:0}
+  .spot-item button.main{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:10px 4px;border-bottom:1px solid var(--paper-2);background:none}
+  .spot-item button.main:hover{background:#fff}
+  .spot-ic{width:34px;height:34px;border-radius:50%;background:#fff;border:2.5px solid var(--c);display:grid;place-items:center;font-size:17px;flex:none}
+  .spot-tx{min-width:0}
+  .spot-tx b{display:block;font-size:14.5px;line-height:1.4}
+  .spot-tx small{display:block;font-size:12.5px;color:var(--muted)}
+
+  /* photos */
+  .drop-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:20px 12px;border:2px dashed var(--line);border-radius:12px;background:#fff;text-align:center;font-weight:700;font-size:15px;cursor:pointer;color:var(--ink)}
+  .drop-zone small{font-weight:400;font-size:12.5px;color:var(--muted)}
+  .drop-zone:hover,.drop-zone.over{border-color:var(--pine);background:#f4f8f5}
+  .photo-list{list-style:none;margin:14px 0 0;padding:0}
+  .photo-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--paper-2)}
+  .photo-thumb{width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--paper-2);flex:none}
+  .photo-body{flex:1;min-width:0;font-size:13.5px}
+  .photo-time{font-weight:700}
+  .photo-loc{color:var(--pine)}
+  .photo-loc.warn{color:var(--rust)}
+  .photo-status{color:var(--muted);font-size:12.5px}
+  .photo-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .ai-box{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:6px;line-height:1.6}
+  .ai-box p{margin:2px 0}
+  .ai-box small{color:var(--muted)}
+
+  /* record */
+  .rec-meter{display:flex;align-items:baseline;gap:14px;background:var(--ink);color:var(--paper);border-radius:12px;padding:12px 16px;margin:8px 0 12px}
+  .rec-meter b{font:600 40px/1 "Barlow Condensed",sans-serif;font-variant-numeric:tabular-nums}
+  .rec-meter small{font:500 16px "Barlow Condensed",sans-serif;color:var(--ochre-l)}
+  .rec-badge{position:absolute;top:12px;left:12px;z-index:950;display:flex;align-items:center;gap:8px;background:var(--rust);color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .rec-badge[hidden]{display:none}
+  .rec-dot{width:10px;height:10px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* route cards */
+  .route-list{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .route-card{display:flex;gap:12px;padding:10px;border-radius:12px;background:#fff;border:1px solid var(--paper-2);text-align:left;width:100%}
+  .route-card:hover{border-color:var(--pine)}
+  .route-thumb{width:76px;height:76px;border-radius:8px;object-fit:cover;flex:none;background:var(--paper-2)}
+  .route-thumb.ph{display:grid;place-items:center}
+  .route-thumb.ph svg{width:52px;height:30px}
+  .route-tx{min-width:0;flex:1}
+  .route-tx h4{margin:0;font-size:15px;font-weight:900;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .route-tx .by{font-size:12.5px;color:var(--muted)}
+  .route-nums{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font:600 16px "Barlow Condensed",sans-serif;color:var(--ink)}
+  .route-nums span small{font-family:"Zen Kaku Gothic New",sans-serif;font-size:11px;font-weight:500;color:var(--muted);margin-left:2px}
+  .vis{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
+  .vis.public{background:#E1EBE5;color:var(--pine)}
+  .vis.private{background:var(--paper-2);color:var(--muted)}
+  .card-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+
+  /* dock (cyclocomputer) */
+  .dock{position:absolute;left:12px;right:12px;bottom:14px;z-index:900;background:var(--ink);color:var(--paper);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.3);overflow:hidden}
+  .dock[hidden]{display:none}
+  .dock-top{display:flex;align-items:stretch}
+  .stats{display:flex;overflow-x:auto;padding:12px 6px 8px;flex:1;scrollbar-width:none}
+  .stats::-webkit-scrollbar{display:none}
+  .stat{padding:0 14px;border-right:1px solid rgba(239,241,232,.14);white-space:nowrap}
+  .stat:last-child{border-right:0}
+  .stat b{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.005em}
+  .stat small{font-family:"Barlow Condensed",sans-serif;font-weight:500;font-size:16px;color:var(--ochre-l);margin-left:3px}
+  .stat span{display:block;font-size:11.5px;color:rgba(239,241,232,.62);margin-top:3px}
+  .dock-toggle{width:48px;flex:none;color:rgba(239,241,232,.75);display:grid;place-items:center;border-left:1px solid rgba(239,241,232,.12);background:none}
+  .dock-toggle svg{width:20px;height:20px;transition:transform .2s}
+  .dock.collapsed .dock-toggle svg{transform:rotate(180deg)}
+  .chart-box{height:150px;padding:0 10px 8px;position:relative}
+  .dock.collapsed .chart-box,.dock.collapsed .legend{display:none}
+  .legend{display:flex;gap:14px;padding:0 16px 6px;font-size:11.5px;color:rgba(239,241,232,.62)}
+  .legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px}
+  .no-ele{height:100%;display:flex;align-items:center;justify-content:center;gap:12px;font-size:14px;color:rgba(239,241,232,.7);flex-wrap:wrap;text-align:center}
+
+  /* map pins */
+  .wp-pin{width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;border:3px solid #fff;display:grid;place-items:center;font:700 15px "Barlow Condensed",sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+  .wp-pin.s{background:var(--pine)} .wp-pin.g{background:var(--rust)}
+  .spot-pin{width:30px;height:30px;border-radius:50%;background:#fff;border:2.5px solid var(--c);display:grid;place-items:center;font-size:16px;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+  .spot-pin.user{border-style:dashed;border-width:3px}
+  .photo-pin{width:40px;height:40px;border-radius:9px;border:3px solid #fff;box-shadow:0 2px 7px rgba(0,0,0,.35);background:var(--paper-2) center/cover no-repeat}
+  .photo-pin.cand{border-color:var(--ochre);border-style:dashed}
+  .hover-dot{width:16px;height:16px;border-radius:50%;background:var(--ochre);border:3px solid #fff;box-shadow:0 0 0 2px var(--ink)}
+  .peak-pin{display:inline-block;background:var(--ink);color:#fff;font:600 14px "Barlow Condensed",sans-serif;padding:2px 7px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-130%);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+  .me-dot{width:18px;height:18px;border-radius:50%;background:#2B7BE4;border:3px solid #fff;box-shadow:0 0 0 6px rgba(43,123,228,.22)}
+  .map-ctl{width:34px;height:34px;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;display:grid;place-items:center;color:var(--ink)}
+  .map-ctl svg{width:18px;height:18px}
+  .pop{min-width:190px;font-family:"Zen Kaku Gothic New",sans-serif}
+  .pop-cat{font-size:12px;color:var(--muted)}
+  .pop-name{font-weight:900;font-size:15px;margin:2px 0 4px;line-height:1.4}
+  .pop-img{width:100%;max-height:160px;object-fit:cover;border-radius:8px;margin:4px 0}
+  .pop-note,.pop-meta{font-size:12.5px;margin:2px 0 6px;color:var(--muted);line-height:1.6}
+  .pop .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .leaflet-container{font-family:"Zen Kaku Gothic New",sans-serif}
+
+  /* modal */
+  .modal{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(29,42,51,.58)}
+  .modal[hidden]{display:none}
+  .modal-card{background:var(--paper);border-radius:18px;width:100%;max-width:440px;max-height:calc(100dvh - 32px);overflow:auto;padding:24px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
+  .modal-card.wide{max-width:660px}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .modal-head h2{font-size:21px;font-weight:900;line-height:1.35;margin:0}
+  .modal-close{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--muted);background:none;flex:none}
+  .modal-close:hover{background:var(--paper-2);color:var(--ink)}
+  .auth-mark{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .auth-mark svg{width:64px;height:40px}
+  .auth-mark b{display:block;font-size:22px;font-weight:900;line-height:1.2}
+  .auth-mark span{font-size:13px;color:var(--muted)}
+  .auth-view[hidden]{display:none}
+  .auth-links{display:flex;justify-content:space-between;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .msg{font-size:14px;padding:10px 12px;border-radius:10px;margin-bottom:12px;line-height:1.6}
+  .msg[hidden]{display:none}
+  .msg.err{background:#F6E1DC;color:#8A2B1C}
+  .msg.ok{background:#E1EBE5;color:var(--pine)}
+  .radio-row{display:flex;gap:8px}
+  .radio-row label{flex:1}
+  .radio-row input{position:absolute;opacity:0}
+  .radio-row span{display:block;text-align:center;padding:11px 8px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-weight:700;font-size:14.5px;cursor:pointer}
+  .radio-row input:checked + span{border-color:var(--pine);background:#E1EBE5;color:var(--pine)}
+  .radio-row input:focus-visible + span{outline:3px solid var(--ochre)}
+
+  /* detail */
+  .detail-nums{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 12px}
+  .detail-nums div{font:600 24px/1.1 "Barlow Condensed",sans-serif}
+  .detail-nums small{display:block;font-family:"Zen Kaku Gothic New",sans-serif;font-size:11.5px;font-weight:500;color:var(--muted)}
+  .detail-desc{white-space:pre-wrap;font-size:14.5px;line-height:1.85;margin:0 0 12px}
+  .detail-photos{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px}
+  .detail-photos img{width:110px;height:82px;object-fit:cover;border-radius:8px;flex:none}
+  .like-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;border:1.5px solid var(--rust);color:var(--rust);font-weight:700;background:#fff;min-height:44px}
+  .like-btn[aria-pressed="true"]{background:var(--rust);color:#fff}
+  .like-btn svg{width:18px;height:18px}
+  .comments{list-style:none;margin:10px 0;padding:0}
+  .comment{padding:10px 0;border-bottom:1px solid var(--paper-2)}
+  .comment .who{font-size:13px;font-weight:700}
+  .comment .who small{font-weight:400;color:var(--muted);margin-left:6px}
+  .comment p{margin:4px 0;white-space:pre-wrap;font-size:14.5px;line-height:1.75;word-break:break-word}
+
+  /* toast / loading / drop */
+  #toasts{position:fixed;top:calc(var(--header-h) + 12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:3000;display:flex;flex-direction:column;gap:8px;width:min(92vw,440px);pointer-events:none}
+  .toast{background:var(--ink);color:var(--paper);padding:12px 16px;border-radius:12px;font-size:14.5px;line-height:1.6;box-shadow:0 10px 30px rgba(0,0,0,.28);border-left:5px solid var(--pine-l);pointer-events:auto}
+  .toast.warn{border-left-color:var(--ochre-l)} .toast.error{border-left-color:#E4674F}
+  #loading{position:fixed;inset:0;z-index:2600;background:rgba(239,241,232,.62);display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;font-weight:700}
+  #loading[hidden]{display:none}
+  .wheel{width:64px;height:64px;animation:spin 1.1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #dropOverlay{position:fixed;inset:0;z-index:2500;background:rgba(47,93,80,.88);color:#fff;display:none;align-items:center;justify-content:center;font-size:20px;font-weight:900;text-align:center;border:5px dashed rgba(255,255,255,.7);padding:20px}
+  body.dragging #dropOverlay{display:flex}
+
+  /* mobile: panel becomes bottom sheet */
+  @media (max-width: 767px){
+    .brand-sub{display:none}
+    .panel{position:fixed;left:0;right:0;bottom:0;width:auto;height:min(72dvh,660px);border-right:0;border-radius:18px 18px 0 0;box-shadow:0 -8px 26px rgba(29,42,51,.2);transform:translateY(calc(100% - 64px - env(safe-area-inset-bottom,0px)));transition:transform .28s ease;padding-bottom:env(safe-area-inset-bottom,0px)}
+    .panel.open{transform:none}
+    .sheet-handle{display:block;width:100%;height:14px;background:none;border:0;flex:none;padding:6px 0 0}
+    .sheet-handle::before{content:"";display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto}
+    .tab{padding:10px 10px 10px}
+    .dock{left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom,0px))}
+    .panel.open ~ .map-wrap .dock{display:none}
+    .stat b{font-size:28px}
+    .stat{padding:0 11px}
+    .chart-box{height:120px}
+    .rec-badge{top:10px;left:10px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 64 40" width="44" height="28" aria-hidden="true">
+      <circle cx="14" cy="26" r="11" fill="none" stroke="#EFF1E8" stroke-width="3"/>
+      <circle cx="50" cy="26" r="11" fill="none" stroke="#EFF1E8" stroke-width="3"/>
+      <path d="M14 26 L26 10 L42 10 L50 26 M26 10 L32 26 L42 10 M32 26 L14 26" fill="none" stroke="#E6AE45" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="brand-name">CycleNavi</div>
+      <div class="brand-sub">自転車ツーリングの計画と記録</div>
+    </div>
+  </div>
+  <div style="flex:1"></div>
+  <button id="userBtn" class="user-btn" type="button" aria-haspopup="menu" aria-expanded="false" hidden>
+    <span class="av" id="userInitial">?</span><span class="nm" id="userName"></span>
+  </button>
+  <div id="userMenu" class="user-menu" role="menu" hidden>
+    <div class="who" id="userEmail"></div>
+    <button type="button" role="menuitem" id="menuPw">パスワードを変更</button>
+    <button type="button" role="menuitem" id="menuLogout">ログアウト</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside id="panel" class="panel" aria-label="操作パネル">
+    <button type="button" class="sheet-handle" id="sheetHandle" aria-label="パネルを開閉"></button>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="route" aria-selected="true">ルート</button>
+      <button class="tab" role="tab" data-tab="spots" aria-selected="false">スポット</button>
+      <button class="tab" role="tab" data-tab="photos" aria-selected="false">写真</button>
+      <button class="tab" role="tab" data-tab="record" aria-selected="false">記録・GPX</button>
+      <button class="tab" role="tab" data-tab="public" aria-selected="false">みんなのルート</button>
+      <button class="tab" role="tab" data-tab="mine" aria-selected="false">マイルート</button>
+    </nav>
+
+    <div class="panel-body">
+      <!-- ===== ルート ===== -->
+      <section class="pane active" data-pane="route" role="tabpanel">
+        <div id="currentRoute" class="current" hidden></div>
+        <h3 class="h first">地点</h3>
+        <p class="note">地図をタップすると、出発地 → 経由地 → 目的地の順に追加されます。ピンはドラッグで動かせます。</p>
+        <form class="search-row" id="placeForm">
+          <input id="placeQuery" class="input" type="search" placeholder="地名・施設名で探す" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">検索</button>
+        </form>
+        <ul id="placeResults" class="results"></ul>
+        <ol id="wpList" class="wp-list"></ol>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button class="btn btn-quiet" type="button" id="addHereBtn">現在地を追加</button>
+          <button class="btn btn-quiet" type="button" id="loopBtn">出発地に戻る</button>
+          <button class="btn btn-ghost" type="button" id="clearBtn">すべて消す</button>
+        </div>
+        <label class="check"><input type="checkbox" id="tapToAdd" checked> 地図のタップで地点を追加する</label>
+
+        <h3 class="h">自転車の種類</h3>
+        <select id="profileSel" class="select" aria-label="自転車の種類">
+          <option value="cycling-regular">ランドナー・ツーリング車</option>
+          <option value="cycling-road">ロードバイク</option>
+          <option value="cycling-mountain">MTB・グラベル</option>
+          <option value="cycling-electric">e-bike（電動アシスト）</option>
+        </select>
+
+        <h3 class="h">経路の条件</h3>
+        <div class="seg" role="radiogroup" aria-label="経路の条件">
+          <label><input type="radio" name="cond" value="flat" checked>
+            <span class="opt"><svg viewBox="0 0 52 22" aria-hidden="true"><path d="M2 16 C12 15 18 13 26 13 S40 15 50 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M2 20 H50" stroke="currentColor" stroke-width="1" opacity=".35"/></svg>平坦重視</span></label>
+          <label><input type="radio" name="cond" value="quiet">
+            <span class="opt"><svg viewBox="0 0 52 22" aria-hidden="true"><path d="M3 18 C10 18 10 5 18 5 S24 17 31 17 S38 4 49 4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>交通量少<br>裏道優先</span></label>
+          <label><input type="radio" name="cond" value="shortest">
+            <span class="opt"><svg viewBox="0 0 52 22" aria-hidden="true"><path d="M3 11 H45" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M40 5 L48 11 L40 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>最短距離</span></label>
+        </div>
+        <p class="note mt-2" id="condNote"></p>
+        <button class="btn btn-primary btn-block" type="button" id="calcBtn">ルートを引く</button>
+        <p class="note mt-2" id="routeInfo"></p>
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-ghost flex-1" type="button" id="saveOpenBtn" disabled>保存する</button>
+          <button class="btn btn-ghost flex-1" type="button" id="gpxOpenBtn" disabled>GPXで書き出す</button>
+        </div>
+        <button class="btn btn-quiet btn-block mt-2" type="button" id="adviceBtn" disabled>AIにツーリングの助言をもらう</button>
+        <div id="adviceBox" class="advice" hidden></div>
+      </section>
+
+      <!-- ===== スポット ===== -->
+      <section class="pane" data-pane="spots" role="tabpanel">
+        <h3 class="h first">沿道のスポット</h3>
+        <p class="note">ルートがあればルート沿いを、なければ表示中の地図の範囲を探します。</p>
+        <div class="chips" id="catChips"></div>
+        <label class="field"><span>ルートからの距離</span>
+          <select id="spotRadius" class="select">
+            <option value="500">500m以内</option>
+            <option value="1000" selected>1km以内</option>
+            <option value="2000">2km以内</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="showUserSpots" checked> 会員が登録したスポットも表示する</label>
+        <button class="btn btn-primary btn-block" type="button" id="spotSearchBtn">スポットを探す</button>
+        <p class="note mt-3" id="spotSummary"></p>
+        <ul id="spotList" class="spot-list"></ul>
+      </section>
+
+      <!-- ===== 写真 ===== -->
+      <section class="pane" data-pane="photos" role="tabpanel">
+        <h3 class="h first">写真から経路とスポットを作る</h3>
+        <p class="note">スマホで撮った写真を選ぶと、撮影位置と時刻を読み取って撮影順に並べます。位置情報のない写真は、写っている看板や風景からAIが場所を推定します。写真は自動でGoogleドライブに保存されます。</p>
+        <label class="drop-zone" id="photoDrop" for="photoInput">
+          写真を選ぶ（複数可）
+          <small>JPEG推奨。ここへドロップもできます</small>
+          <input type="file" id="photoInput" accept="image/jpeg,image/*" multiple hidden>
+        </label>
+        <div class="flex flex-wrap gap-2 my-3">
+          <button class="btn btn-primary" type="button" id="photosToWpBtn">撮影順に経由地を作る</button>
+          <button class="btn btn-quiet" type="button" id="photosToTrackBtn">撮影地点を線で結ぶ</button>
+        </div>
+        <label class="check"><input type="checkbox" id="spotPublic"> スポット登録するとき会員に公開する</label>
+        <ul id="photoList" class="photo-list"></ul>
+        <p class="note mt-4">位置情報が読み取れない場合：iPhoneは写真アプリの共有 →「オプション」で位置情報をオンにして「ファイル」に保存し、そこから選ぶと読み取れることがあります。SNSやLINEを経由した写真は位置情報が消えています。</p>
+      </section>
+
+      <!-- ===== 記録・GPX ===== -->
+      <section class="pane" data-pane="record" role="tabpanel">
+        <h3 class="h first">走行を記録</h3>
+        <p class="note">スマホのGPSで走った軌跡を記録します。画面を消すと記録が止まる端末があるため、記録中はこの画面を開いたままにしてください。</p>
+        <div class="rec-meter" aria-live="polite">
+          <div><b id="recDist">0.00</b><small>km</small></div>
+          <div><b id="recTime">0:00</b><small>経過</small></div>
+        </div>
+        <button class="btn btn-primary btn-block" type="button" id="recStartBtn">記録を始める</button>
+        <button class="btn btn-danger btn-block" type="button" id="recStopBtn" hidden>記録を終えてルートにする</button>
+
+        <h3 class="h">GPXファイル</h3>
+        <label class="drop-zone" for="gpxInput">
+          GPXファイルを読み込む
+          <small>地図の上にドラッグ＆ドロップもできます</small>
+          <input type="file" id="gpxInput" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden>
+        </label>
+        <button class="btn btn-ghost btn-block mt-3" type="button" id="gpxOpenBtn2" disabled>表示中のルートをGPXで書き出す</button>
+      </section>
+
+      <!-- ===== みんなのルート ===== -->
+      <section class="pane" data-pane="public" role="tabpanel">
+        <h3 class="h first">みんなのルート</h3>
+        <form class="search-row" id="pubForm">
+          <input id="pubQuery" class="input" type="search" placeholder="タイトル・地名・ニックネーム" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">検索</button>
+        </form>
+        <select id="pubSort" class="select mt-2" aria-label="並び順">
+          <option value="new">新しい順</option>
+          <option value="likes">いいねが多い順</option>
+          <option value="distAsc">距離が短い順</option>
+          <option value="distDesc">距離が長い順</option>
+          <option value="climbAsc">獲得標高が少ない順</option>
+        </select>
+        <div id="pubList" class="route-list"></div>
+      </section>
+
+      <!-- ===== マイルート ===== -->
+      <section class="pane" data-pane="mine" role="tabpanel">
+        <h3 class="h first">マイルート</h3>
+        <p class="note">保存したルートです。公開にしたルートは会員が見られます。</p>
+        <div id="mineList" class="route-list"></div>
+      </section>
+    </div>
+  </aside>
+
+  <div class="map-wrap">
+    <div id="map" role="application" aria-label="地図"></div>
+    <div id="recBadge" class="rec-badge" hidden><span class="rec-dot"></span><span id="recBadgeText">記録中</span></div>
+
+    <div id="dock" class="dock" hidden>
+      <div class="dock-top">
+        <div class="stats">
+          <div class="stat"><b id="stDist">0</b><small>km</small><span>距離</span></div>
+          <div class="stat"><b id="stUp">0</b><small>m</small><span>獲得標高</span></div>
+          <div class="stat"><b id="stDown">0</b><small>m</small><span>下り</span></div>
+          <div class="stat"><b id="stMax">–</b><small>m</small><span>最高地点</span></div>
+          <div class="stat"><b id="stGrade">–</b><small>%</small><span>最大勾配</span></div>
+          <div class="stat"><b id="stTime">–</b><small>h</small><span>目安時間</span></div>
+        </div>
+        <button type="button" class="dock-toggle" id="dockToggle" aria-label="標高グラフを開閉" aria-expanded="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="chart-box" id="chartBox"><canvas id="eleChart" aria-label="標高グラフ"></canvas></div>
+      <div class="legend"><span><i style="background:#8BC0AC"></i>4%未満</span><span><i style="background:#E6AE45"></i>4〜8%</span><span><i style="background:#E4674F"></i>8%以上</span></div>
+    </div>
+  </div>
+</main>
+
+<!-- ===== 認証モーダル ===== -->
+<div class="modal" id="authModal" data-locked="true" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <div class="modal-card">
+    <div class="auth-mark">
+      <svg viewBox="0 0 64 40" aria-hidden="true">
+        <circle cx="14" cy="26" r="11" fill="none" stroke="#1D2A33" stroke-width="3"/>
+        <circle cx="50" cy="26" r="11" fill="none" stroke="#1D2A33" stroke-width="3"/>
+        <path d="M14 26 L26 10 L42 10 L50 26 M26 10 L32 26 L42 10 M32 26 L14 26" fill="none" stroke="#C98A1E" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <div><b id="authTitle">CycleNavi</b><span>会員の方はログインしてください</span></div>
+    </div>
+    <div id="authMsg" class="msg" hidden></div>
+
+    <form class="auth-view" data-view="login" id="loginForm">
+      <label class="field"><span>メールアドレス</span><input class="input" type="email" name="email" autocomplete="email" required></label>
+      <label class="field"><span>パスワード</span>
+        <div class="pw-wrap"><input class="input" type="password" name="password" autocomplete="current-password" required>
+          <button type="button" class="pw-eye" aria-label="パスワードを表示" aria-pressed="false"></button></div>
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">ログイン</button>
+      <div class="auth-links">
+        <button type="button" class="link-btn" data-auth="register">はじめての方（新規登録）</button>
+        <button type="button" class="link-btn" data-auth="reset">パスワードを忘れた</button>
+      </div>
+    </form>
+
+    <form class="auth-view" data-view="register" id="registerForm" hidden>
+      <p class="note">メールアドレスに仮パスワードを送ります。届いた仮パスワードでログインし、本パスワードを設定してください。</p>
+      <label class="field"><span>メールアドレス</span><input class="input" type="email" name="email" autocomplete="email" required></label>
+      <label class="field"><span>ニックネーム（公開されます・20文字まで）</span><input class="input" type="text" name="nickname" maxlength="20" required></label>
+      <button class="btn btn-primary btn-block" type="submit">仮パスワードを受け取る</button>
+      <div class="auth-links"><button type="button" class="link-btn" data-auth="login">ログインに戻る</button></div>
+    </form>
+
+    <form class="auth-view" data-view="reset" id="resetForm" hidden>
+      <p class="note">登録したメールアドレスに、新しい仮パスワードを送ります。</p>
+      <label class="field"><span>メールアドレス</span><input class="input" type="email" name="email" autocomplete="email" required></label>
+      <button class="btn btn-primary btn-block" type="submit">仮パスワードを再発行する</button>
+      <div class="auth-links"><button type="button" class="link-btn" data-auth="login">ログインに戻る</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== パスワード変更 ===== -->
+<div class="modal" id="pwModal" hidden role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="pwTitle">パスワードを変更</h2>
+      <button type="button" class="modal-close" data-close="pwModal" aria-label="閉じる"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="note" id="pwLead">英字と数字を含む8文字以上で設定してください。</p>
+    <div id="pwMsg" class="msg" hidden></div>
+    <form id="pwForm">
+      <label class="field"><span id="pwCurLabel">現在のパスワード</span>
+        <div class="pw-wrap"><input class="input" type="password" name="current" autocomplete="current-password" required>
+          <button type="button" class="pw-eye" aria-label="パスワードを表示" aria-pressed="false"></button></div></label>
+      <label class="field"><span>新しいパスワード</span>
+        <div class="pw-wrap"><input class="input" type="password" name="next" autocomplete="new-password" minlength="8" required>
+          <button type="button" class="pw-eye" aria-label="パスワードを表示" aria-pressed="false"></button></div></label>
+      <label class="field"><span>新しいパスワード（確認）</span>
+        <div class="pw-wrap"><input class="input" type="password" name="confirm" autocomplete="new-password" minlength="8" required>
+          <button type="button" class="pw-eye" aria-label="パスワードを表示" aria-pressed="false"></button></div></label>
+      <button class="btn btn-primary btn-block" type="submit">パスワードを変更する</button>
+    </form>
+    <div class="auth-links" id="pwForcedLinks" hidden><button type="button" class="link-btn" id="pwLogout">ログアウトする</button></div>
+  </div>
+</div>
+
+<!-- ===== ルート保存 ===== -->
+<div class="modal" id="saveModal" hidden role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="saveTitle">ルートを保存</h2>
+      <button type="button" class="modal-close" data-close="saveModal" aria-label="閉じる"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="note" id="saveStats"></p>
+    <form id="saveForm">
+      <label class="field"><span>タイトル</span><input class="input" type="text" name="title" maxlength="60" required></label>
+      <label class="field"><span>説明（任意）</span><textarea class="input" name="description" maxlength="2000" placeholder="見どころ、路面、補給の注意など"></textarea></label>
+      <div class="field"><span>公開範囲</span>
+        <div class="radio-row" role="radiogroup">
+          <label><input type="radio" name="visibility" value="private" checked><span>非公開（自分だけ）</span></label>
+          <label><input type="radio" name="visibility" value="public"><span>会員に公開</span></label>
+        </div>
+      </div>
+      <label class="check" id="saveAsNewRow" hidden><input type="checkbox" name="asNew"> 上書きせず、新しいルートとして保存する</label>
+      <button class="btn btn-primary btn-block" type="submit">保存する</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===== GPX出力 ===== -->
+<div class="modal" id="gpxModal" hidden role="dialog" aria-modal="true" aria-labelledby="gpxTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="gpxTitle">GPXで書き出す</h2>
+      <button type="button" class="modal-close" data-close="gpxModal" aria-label="閉じる"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <form id="gpxForm">
+      <label class="field"><span>ファイル名</span><input class="input" type="text" name="name" maxlength="60" required></label>
+      <label class="check"><input type="checkbox" name="wp" checked> 出発地・経由地・目的地を含める</label>
+      <label class="check"><input type="checkbox" name="spots"> 表示中の沿道スポットを含める</label>
+      <label class="check"><input type="checkbox" name="photos"> 写真の撮影地点を含める</label>
+      <p class="note">サイコンやスマホのナビアプリ（Garmin、Ride with GPSなど）に読み込めるGPX 1.1形式で保存します。</p>
+      <button class="btn btn-primary btn-block" type="submit">ダウンロード</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===== ルート詳細 ===== -->
+<div class="modal" id="detailModal" hidden role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h2 id="detailTitle"></h2>
+        <div class="note" id="detailBy" style="margin:2px 0 0"></div>
+      </div>
+      <button type="button" class="modal-close" data-close="detailModal" aria-label="閉じる"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="loading" hidden>
+  <svg class="wheel" viewBox="0 0 64 64" aria-hidden="true">
+    <circle cx="32" cy="32" r="28" fill="none" stroke="#1D2A33" stroke-width="4"/>
+    <circle cx="32" cy="32" r="4" fill="#C98A1E"/>
+    <g stroke="#1D2A33" stroke-width="1.6"><path d="M32 4V60M4 32H60M12.2 12.2L51.8 51.8M51.8 12.2L12.2 51.8"/></g>
+  </svg>
+  <div id="loadingText">読み込み中…</div>
+</div>
+<div id="dropOverlay">ここにドロップ<br><small style="font-weight:500;font-size:15px">GPXは地図に、写真は写真タブに読み込みます</small></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
