@@ -5,8 +5,8 @@
 'use strict';
 
 const CONFIG = {
-  // ▼ GASをWebアプリとしてデプロイしたURLに書き換えてください
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbzIC06CTyDFGige36Ydbeox_q2l9aaaF7hm4q8VSlLYiL2ixLVqcxrxpDKhOxUiREBQ/exec',
+  // GASのURLは config.js で設定します（app.jsを差し替えても消えません）
+  GAS_URL: (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || '',
   OVERPASS_URL: 'https://overpass-api.de/api/interpreter',
   NOMINATIM_URL: 'https://nominatim.openstreetmap.org/search',
   DEFAULT_CENTER: [35.6812, 139.7671],
@@ -15,6 +15,7 @@ const CONFIG = {
   CLIMB_M_PER_HOUR: 500,   // 目安時間：登り500mごとに+1時間
   MAX_SAVE_POINTS: 8000
 };
+const APP_VERSION = '1.1.0';
 const TOKEN_KEY = 'cyclenavi_token';
 const REC_KEY = 'cyclenavi_recording';
 
@@ -1651,6 +1652,15 @@ function bindUI() {
   }));
   $('#sheetHandle').addEventListener('click', () => $('#panel').classList.toggle('open'));
 
+  // スマホ：下のパネル・標高ドックをまとめて隠す／戻す
+  $('#uiToggle').addEventListener('click', () => {
+    const hidden = document.body.classList.toggle('ui-hidden');
+    if (hidden) $('#panel').classList.remove('open');
+    $('#uiToggle').setAttribute('aria-pressed', String(hidden));
+    $('#uiToggle').setAttribute('aria-label', hidden ? '下のパネルを表示' : '下のパネルを隠す');
+    $('#uiToggleText').textContent = hidden ? '表示' : '隠す';
+  });
+
   // ユーザーメニュー
   $('#userBtn').addEventListener('click', () => {
     const m = $('#userMenu'); m.hidden = !m.hidden;
@@ -1777,13 +1787,17 @@ function bindUI() {
 
 /* ---------------- 起動 ---------------- */
 async function init() {
+  const ver = document.getElementById('appVersion');
+  if (ver) ver.textContent = 'v' + APP_VERSION;
+  console.log('CycleNavi v' + APP_VERSION);
+  if (!CONFIG.GAS_URL) console.error('config.js の GAS_URL が設定されていません');
   initMap();
   setupPwEyes();
   bindAuth();
   bindUI();
   renderWaypointList();
   renderPhotos();
-  if (CONFIG.GAS_URL.includes('XXXX')) toast('app.js の GAS_URL をデプロイしたURLに書き換えてください', 'warn', 10000);
+  if (!CONFIG.GAS_URL || CONFIG.GAS_URL.includes('XXXX')) toast('config.js の GAS_URL をデプロイしたURLに書き換えてください', 'warn', 10000);
   if (state.token) {
     loading(true, 'ログイン情報を確認しています…');
     try {

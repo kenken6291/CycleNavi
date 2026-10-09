@@ -59,6 +59,8 @@
   .pane{display:none}
   .pane.active{display:block}
   .sheet-handle{display:none}
+  .brand-name .ver{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12px;letter-spacing:.04em;color:rgba(239,241,232,.6);margin-left:6px;vertical-align:2px}
+  .ui-toggle{display:none}
 
   /* typography */
   .h{font-weight:900;font-size:17px;margin:22px 0 8px;line-height:1.4}
@@ -296,7 +298,16 @@
     .stat b{font-size:28px}
     .stat{padding:0 11px}
     .chart-box{height:120px}
-    .rec-badge{top:10px;left:10px}
+    .rec-badge{top:62px;left:10px}
+    /* 下のパネルを隠すボタン */
+    .ui-toggle{display:flex;align-items:center;gap:6px;position:absolute;top:10px;left:10px;z-index:960;height:44px;padding:0 14px 0 11px;border-radius:999px;border:0;background:var(--ink);color:var(--paper);font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.28)}
+    .ui-toggle svg{width:20px;height:20px;flex:none}
+    .ui-toggle .ic-show{display:none}
+    body.ui-hidden .ui-toggle{background:var(--ochre);color:var(--ink)}
+    body.ui-hidden .ui-toggle .ic-hide{display:none}
+    body.ui-hidden .ui-toggle .ic-show{display:block}
+    body.ui-hidden .panel{transform:translateY(100%)!important;pointer-events:none;box-shadow:none}
+    body.ui-hidden .dock{display:none!important}
   }
   @media (prefers-reduced-motion: reduce){
     *{transition:none!important;animation:none!important}
@@ -313,7 +324,7 @@
       <path d="M14 26 L26 10 L42 10 L50 26 M26 10 L32 26 L42 10 M32 26 L14 26" fill="none" stroke="#E6AE45" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
     </svg>
     <div>
-      <div class="brand-name">CycleNavi</div>
+      <div class="brand-name">CycleNavi<span class="ver" id="appVersion">v1.1.0</span></div>
       <div class="brand-sub">自転車ツーリングの計画と記録</div>
     </div>
   </div>
@@ -471,6 +482,11 @@
 
   <div class="map-wrap">
     <div id="map" role="application" aria-label="地図"></div>
+    <button type="button" class="ui-toggle" id="uiToggle" aria-pressed="false" aria-label="下のパネルを隠す">
+      <svg class="ic-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/><path d="M4 20h16"/></svg>
+      <svg class="ic-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/><path d="M4 20h16"/></svg>
+      <span id="uiToggleText">隠す</span>
+    </button>
     <div id="recBadge" class="rec-badge" hidden><span class="rec-dot"></span><span id="recBadgeText">記録中</span></div>
 
     <div id="dock" class="dock" hidden>
@@ -630,6 +646,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=1.1.0"></script>
+<script src="app.js?v=1.1.0"></script>
 </body>
 </html>
